@@ -29,38 +29,49 @@ public class MainController extends Thread{
      * creates Tradingbots as new Threads
      */
     public void run(){
-        var strategies = new ArrayList<IStrategy>();
-        while (true){
+        var watchlist = new Properties();
+        var oldRunningThreads = new HashMap<String, ThreadDetails>();
+
+        while (true) {
             refreshRunningThreads();
 
-            strategies = updateClasses();
-            Properties watchlist = ReadWatchlistFile.readWatchlistFile("trading.Watchlist.properties");
+            if(oldRunningThreads != this.runningThreads){
+                // Todo rebalance money
+            }
 
+            if(watchlist != ReadWatchlistFile.readWatchlistFile("trading.Watchlist.properties")){
+                // Todo find good strategy and rebalance money
+            }
+        }
+            // Todo Maincontroller should only reevaluate if something changed
+            var strategies = updateClasses();
             for(int i = 1; i < watchlist.size() + 1; i++){
                 var symbol = watchlist.getProperty(Integer.toString(i));
-                if(runningThreads.containsKey(symbol)){
+                if(this.runningThreads.containsKey(symbol)){
                     continue;
                 }
 
-                System.out.print(symbol + " get's started");
-
                 var strategy = getBestStrategy(strategies, symbol);
 
-                var riskFactor = 90 / watchlist.size();
+                if(strategy != null){
+                    var riskFactor = 90 / watchlist.size();
 
-                System.out.print(" with strategy: " + strategy.getClass().getName() + "\n");
-                var configuration = new TradingConfiguration(symbol, strategy, riskFactor); // TODO implement setuppservice
-                var thread = new ThreadDetails(new Thread(new TradingBot(configuration, new TradingbotAPI(configuration, alpacaAPI), this.marketData, this)));
-                thread.getThread().start();
-                runningThreads.put(symbol, thread);
-                System.out.println("Number of active threads : " + Thread.activeCount());
+                    System.out.print(symbol + " get's started with strategy: " + strategy.getClass().getName() + "\n");
+                    var configuration = new TradingConfiguration(symbol, strategy, riskFactor); // TODO implement setuppservice
+                    var thread = new ThreadDetails(new Thread(new TradingBot(configuration, new TradingbotAPI(configuration, alpacaAPI), this.marketData, this)));
+                    thread.getThread().start();
+                    this.runningThreads.put(symbol, thread);
+                    System.out.println("Number of active threads : " + Thread.activeCount());
+                }
+                else{
+                    System.out.println("Couldn't find good strategy for Symbol: " + symbol);
+                }
             }
-        }
     }
 
-    private void refreshRunningThreads() {
+    private HashMap<String, ThreadDetails> refreshRunningThreads() {
         ArrayList<String> toDelete = new ArrayList<>();
-        runningThreads.forEach((symbol, threadDetails) -> {
+        this.runningThreads.forEach((symbol, threadDetails) -> {
             if(!threadDetails.getThread().isAlive()){
                 System.out.println("Removed Thread " + symbol);
                 toDelete.add(symbol);
@@ -68,13 +79,15 @@ public class MainController extends Thread{
         });
 
         for(String symbolOfToDelete:toDelete){
-            runningThreads.remove(symbolOfToDelete);
+            this.runningThreads.remove(symbolOfToDelete);
         }
+
+        return this.runningThreads;
     }
 
     public StopMode getStopMode(String marktOfThread) throws Exception {
-        if(runningThreads.containsKey(marktOfThread)){
-            return runningThreads.get(marktOfThread).getStopMode();
+        if(this.runningThreads.containsKey(marktOfThread)){
+            return this.runningThreads.get(marktOfThread).getStopMode();
         }
 
         throw new Exception("Can't find a Tradingbot working on market: " + marktOfThread);
@@ -83,14 +96,14 @@ public class MainController extends Thread{
 
     public void stop(StopMode stopMode, String marketToClose) throws Exception {
         if (marketToClose == null){
-            for(ThreadDetails thread:runningThreads.values()){
+            for(ThreadDetails thread:this.runningThreads.values()){
                 thread.setStopMode(stopMode);
             }
             return;
         }
 
-        if(runningThreads.containsKey(marketToClose)){
-            runningThreads.get(marketToClose).setStopMode(stopMode);
+        if(this.runningThreads.containsKey(marketToClose)){
+            this.runningThreads.get(marketToClose).setStopMode(stopMode);
             return;
         }
 
@@ -168,10 +181,15 @@ public class MainController extends Thread{
     private IStrategy getBestStrategy(List<IStrategy> strategies, String symbol){ // Todo implement that a Strategy that got "banned" from the user, won't get chosen for the same Market
         List<Double> strategyChance = new ArrayList<>();
         for(IStrategy strategy:strategies){
-            // TODO look that data you take is existing
             var data = marketData.getMarketData(ZonedDateTime.now(ZoneId.of("America/New_York")).minusMinutes(strategy.getTimeFrameForEvaluation().getMinute()), ZonedDateTime.now(ZoneId.of("America/New_York")), symbol, strategy.getBarsTimeFrame());
-            strategyChance.add(strategy.evaluateChancesToBeSuccessful(data));
+            var profitLoss = strategy.evaluateChancesToBeSuccessful(data);
+            System.out.println("Estimation of profit with " + strategy.getName() + ": " + profitLoss);
+            strategyChance.add(profitLoss);
         }
-        return strategies.get(strategyChance.indexOf(Collections.max(strategyChance)));
+        var bestChance = Collections.max(strategyChance);
+        if(bestChance > 0){
+            return strategies.get(strategyChance.indexOf(bestChance));
+        }
+        return null;
     }
 }
