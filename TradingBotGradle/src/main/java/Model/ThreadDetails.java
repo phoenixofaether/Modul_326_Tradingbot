@@ -1,7 +1,10 @@
 package Model;
 
+import Configuration.TradingConfiguration;
+
 public class ThreadDetails {
     private Thread thread;
+    private TradingConfiguration configuration;
     private StopMode stopMode;
 
     public ThreadDetails(Thread thread){
@@ -16,6 +19,14 @@ public class ThreadDetails {
 
     public Thread getThread() {
         return thread;
+    }
+
+    public TradingConfiguration getConfiguration() {
+        return configuration;
+    }
+
+    public void setConfiguration(TradingConfiguration configuration) {
+        this.configuration = configuration;
     }
 
     public StopMode getStopMode() {

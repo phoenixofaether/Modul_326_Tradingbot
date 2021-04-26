@@ -105,7 +105,7 @@ public class TradingBot extends Thread {
     }
 
     /**
-     * verifys tempMarketData, if tempMarketData is null or empty noMarketData will be set true and it will return false
+     * Verifies tempMarketData, if tempMarketData is null or empty noMarketData will be set true and it will return false
      * @param tempMarketData marketData that should be checked
      * @return true if MarketData is valid and false if MarketData isn't
      */
@@ -148,6 +148,10 @@ public class TradingBot extends Thread {
     public void stopTrading(){
         isRunning = false;
         tradingbotAPI.closeAllOrders();
+    }
+
+    public void setConfiguration(TradingConfiguration configuration){
+        this.configuration = configuration;
     }
 
     /**

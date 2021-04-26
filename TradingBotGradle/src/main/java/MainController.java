@@ -11,8 +11,10 @@ import org.reflections.Reflections;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class MainController extends Thread{
+    private static final int PERCANTAGEOFTOTAL = 95;
     private IMarketData marketData;
     private AlpacaAPI alpacaAPI;
     private HashMap<String, ThreadDetails> runningThreads = new HashMap<>();
@@ -36,37 +38,23 @@ public class MainController extends Thread{
             refreshRunningThreads();
 
             if(oldRunningThreads != this.runningThreads){
-                // Todo rebalance money
+                rebalanceMoney(oldRunningThreads);
             }
 
             if(watchlist != ReadWatchlistFile.readWatchlistFile("trading.Watchlist.properties")){
-                // Todo find good strategy and rebalance money
+                watchlist = ReadWatchlistFile.readWatchlistFile("trading.Watchlist.properties");
+                startStrategys(watchlist);
+                rebalanceMoney(oldRunningThreads);
             }
+            else{
+                try {
+                    Thread.sleep(5000);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+
         }
-            // Todo Maincontroller should only reevaluate if something changed
-            var strategies = updateClasses();
-            for(int i = 1; i < watchlist.size() + 1; i++){
-                var symbol = watchlist.getProperty(Integer.toString(i));
-                if(this.runningThreads.containsKey(symbol)){
-                    continue;
-                }
-
-                var strategy = getBestStrategy(strategies, symbol);
-
-                if(strategy != null){
-                    var riskFactor = 90 / watchlist.size();
-
-                    System.out.print(symbol + " get's started with strategy: " + strategy.getClass().getName() + "\n");
-                    var configuration = new TradingConfiguration(symbol, strategy, riskFactor); // TODO implement setuppservice
-                    var thread = new ThreadDetails(new Thread(new TradingBot(configuration, new TradingbotAPI(configuration, alpacaAPI), this.marketData, this)));
-                    thread.getThread().start();
-                    this.runningThreads.put(symbol, thread);
-                    System.out.println("Number of active threads : " + Thread.activeCount());
-                }
-                else{
-                    System.out.println("Couldn't find good strategy for Symbol: " + symbol);
-                }
-            }
     }
 
     private HashMap<String, ThreadDetails> refreshRunningThreads() {
@@ -83,6 +71,32 @@ public class MainController extends Thread{
         }
 
         return this.runningThreads;
+    }
+
+    private void startStrategys(Properties watchlist){
+        var strategies = updateClasses();
+        for(int i = 1; i < watchlist.size() + 1; i++){
+            var symbol = watchlist.getProperty(Integer.toString(i));
+            if(this.runningThreads.containsKey(symbol)){
+                continue;
+            }
+
+            var strategy = getBestStrategy(strategies, symbol);
+
+            if(strategy != null){
+                var riskFactor = 0;
+
+                System.out.print(symbol + " get's started with strategy: " + strategy.getClass().getName() + "\n");
+                var configuration = new TradingConfiguration(symbol, strategy, riskFactor); // TODO implement setuppservice //TODO test what happens with a riskfactor of 0
+                var thread = new ThreadDetails(new Thread(new TradingBot(configuration, new TradingbotAPI(configuration, alpacaAPI), this.marketData, this)));
+                thread.getThread().start();
+                this.runningThreads.put(symbol, thread);
+                System.out.println("Number of active threads : " + Thread.activeCount());
+            }
+            else{
+                System.out.println("Couldn't find good strategy for Symbol: " + symbol);
+            }
+        }
     }
 
     public StopMode getStopMode(String marktOfThread) throws Exception {
@@ -108,6 +122,48 @@ public class MainController extends Thread{
         }
 
         throw new Exception("Can't find a Tradingbot working on market: " + marketToClose);
+    }
+
+    private void rebalanceMoney(HashMap<String, ThreadDetails> oldRunningThreads){
+        if(oldRunningThreads != this.runningThreads){
+            if(oldRunningThreads.size() < this.runningThreads.size()){
+                this.runningThreads.forEach((k, v) -> {
+                    if(oldRunningThreads.containsKey(k)){
+                        v.getConfiguration().setRiskFactor(PERCANTAGEOFTOTAL/ this.runningThreads.size()); //Todo test this
+                    }
+                });
+
+                AtomicBoolean notDone = new AtomicBoolean(false);
+
+                while(notDone.get()){
+                    notDone.set(false);
+                    this.runningThreads.forEach((k, v) -> {
+                        if(oldRunningThreads.containsKey(k)){
+                            if(!v.getConfiguration().isRiskFactorChanged()){
+                                notDone.set(true);
+                            }
+                        }
+                    });
+
+                    try {
+                        Thread.sleep(1000);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                }
+
+                this.runningThreads.forEach((k, v) -> {
+                    if(!oldRunningThreads.containsKey(k)){
+                        v.getConfiguration().setRiskFactor(PERCANTAGEOFTOTAL/this.runningThreads.size());
+                    }
+                });
+            }
+            else{
+                this.runningThreads.forEach((k, v)  -> {
+                    v.getConfiguration().setRiskFactor(PERCANTAGEOFTOTAL/this.runningThreads.size());
+                });
+            }
+        }
     }
 
 
