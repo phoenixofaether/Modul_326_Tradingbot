@@ -52,6 +52,13 @@ public class TradingBot extends Thread {
                     System.out.println("Tradingbot on Market " + configuration.getSymbol() + " will get shut down soon (normal mode).");
                 }
 
+                if(configuration.getRiskFactor() == 0){
+                    configuration.setRiskFactorChanged(true);
+                    System.out.println("Riskfactor is 0, sleeping");
+                    Thread.sleep(1000);
+                    continue;
+                }
+
                 this.checkMarket();
 
                 if(localDateTime.isAfter(LocalDateTime.now().minusSeconds(59))){ // TODO test this
@@ -101,6 +108,15 @@ public class TradingBot extends Thread {
                     e.printStackTrace();
                 }
             }
+            else{
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+                this.noMarketData = false;
+            }
+
         }
     }
 

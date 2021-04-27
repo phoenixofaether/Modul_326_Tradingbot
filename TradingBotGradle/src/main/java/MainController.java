@@ -3,6 +3,7 @@ import Configurations.Default.Strategy;
 import BaseStrategy.BaseStrategy;
 import Interfaces.IMarketData;
 import Interfaces.IStrategy;
+import Model.MarketDataModel;
 import Model.StopMode;
 import Model.ThreadDetails;
 import net.jacobpeterson.alpaca.AlpacaAPI;
@@ -18,6 +19,7 @@ public class MainController extends Thread{
     private IMarketData marketData;
     private AlpacaAPI alpacaAPI;
     private HashMap<String, ThreadDetails> runningThreads = new HashMap<>();
+    private HashMap<String, ThreadDetails> oldRunningThreads = new HashMap<>();
 
 
 
@@ -32,19 +34,17 @@ public class MainController extends Thread{
      */
     public void run(){
         var watchlist = new Properties();
-        var oldRunningThreads = new HashMap<String, ThreadDetails>();
-
         while (true) {
             refreshRunningThreads();
 
-            if(oldRunningThreads != this.runningThreads){
-                rebalanceMoney(oldRunningThreads);
+            if(!this.oldRunningThreads.equals(this.runningThreads)){
+                rebalanceMoney();
             }
 
-            if(watchlist != ReadWatchlistFile.readWatchlistFile("trading.Watchlist.properties")){
-                watchlist = ReadWatchlistFile.readWatchlistFile("trading.Watchlist.properties");
+            if(!watchlist.equals(ReadWatchlistFile.readWatchlistFile("trading.Watchlist.properties"))){
+                watchlist = (Properties) ReadWatchlistFile.readWatchlistFile("trading.Watchlist.properties").clone();
                 startStrategys(watchlist);
-                rebalanceMoney(oldRunningThreads);
+                rebalanceMoney();
             }
             else{
                 try {
@@ -74,8 +74,9 @@ public class MainController extends Thread{
     }
 
     private void startStrategys(Properties watchlist){
+        this.oldRunningThreads = (HashMap<String, ThreadDetails>) this.runningThreads.clone();
         var strategies = updateClasses();
-        for(int i = 1; i < watchlist.size() + 1; i++){
+        for(int i = 1; i < watchlist.size() + 1; i++){ //change to foreach on watchlist
             var symbol = watchlist.getProperty(Integer.toString(i));
             if(this.runningThreads.containsKey(symbol)){
                 continue;
@@ -88,7 +89,7 @@ public class MainController extends Thread{
 
                 System.out.print(symbol + " get's started with strategy: " + strategy.getClass().getName() + "\n");
                 var configuration = new TradingConfiguration(symbol, strategy, riskFactor); // TODO implement setuppservice //TODO test what happens with a riskfactor of 0
-                var thread = new ThreadDetails(new Thread(new TradingBot(configuration, new TradingbotAPI(configuration, alpacaAPI), this.marketData, this)));
+                var thread = new ThreadDetails(new Thread(new TradingBot(configuration, new TradingbotAPI(configuration, alpacaAPI), this.marketData, this)), configuration);
                 thread.getThread().start();
                 this.runningThreads.put(symbol, thread);
                 System.out.println("Number of active threads : " + Thread.activeCount());
@@ -124,11 +125,11 @@ public class MainController extends Thread{
         throw new Exception("Can't find a Tradingbot working on market: " + marketToClose);
     }
 
-    private void rebalanceMoney(HashMap<String, ThreadDetails> oldRunningThreads){
-        if(oldRunningThreads != this.runningThreads){
-            if(oldRunningThreads.size() < this.runningThreads.size()){
+    private void rebalanceMoney(){
+        if(!this.oldRunningThreads.equals(this.runningThreads)){
+            if(this.oldRunningThreads.size() < this.runningThreads.size()){
                 this.runningThreads.forEach((k, v) -> {
-                    if(oldRunningThreads.containsKey(k)){
+                    if(this.oldRunningThreads.containsKey(k)){
                         v.getConfiguration().setRiskFactor(PERCANTAGEOFTOTAL/ this.runningThreads.size()); //Todo test this
                     }
                 });
@@ -138,7 +139,7 @@ public class MainController extends Thread{
                 while(notDone.get()){
                     notDone.set(false);
                     this.runningThreads.forEach((k, v) -> {
-                        if(oldRunningThreads.containsKey(k)){
+                        if(this.oldRunningThreads.containsKey(k)){
                             if(!v.getConfiguration().isRiskFactorChanged()){
                                 notDone.set(true);
                             }
@@ -153,7 +154,7 @@ public class MainController extends Thread{
                 }
 
                 this.runningThreads.forEach((k, v) -> {
-                    if(!oldRunningThreads.containsKey(k)){
+                    if(!this.oldRunningThreads.containsKey(k)){
                         v.getConfiguration().setRiskFactor(PERCANTAGEOFTOTAL/this.runningThreads.size());
                     }
                 });
@@ -163,6 +164,8 @@ public class MainController extends Thread{
                     v.getConfiguration().setRiskFactor(PERCANTAGEOFTOTAL/this.runningThreads.size());
                 });
             }
+
+            this.oldRunningThreads = (HashMap<String, ThreadDetails>) this.runningThreads.clone();
         }
     }
 
@@ -237,7 +240,12 @@ public class MainController extends Thread{
     private IStrategy getBestStrategy(List<IStrategy> strategies, String symbol){ // Todo implement that a Strategy that got "banned" from the user, won't get chosen for the same Market
         List<Double> strategyChance = new ArrayList<>();
         for(IStrategy strategy:strategies){
-            var data = marketData.getMarketData(ZonedDateTime.now(ZoneId.of("America/New_York")).minusMinutes(strategy.getTimeFrameForEvaluation().getMinute()), ZonedDateTime.now(ZoneId.of("America/New_York")), symbol, strategy.getBarsTimeFrame());
+            List<MarketDataModel> data = null;
+            try {
+                data = marketData.getMarketData(ZonedDateTime.now(ZoneId.of("America/New_York")).minusMinutes(strategy.getTimeFrameForEvaluation().getMinute()), ZonedDateTime.now(ZoneId.of("America/New_York")), symbol, strategy.getBarsTimeFrame());
+            } catch (Exception e) {
+                e.printStackTrace(); // should mention something is wrong with mark
+            }
             var profitLoss = strategy.evaluateChancesToBeSuccessful(data);
             System.out.println("Estimation of profit with " + strategy.getName() + ": " + profitLoss);
             strategyChance.add(profitLoss);
