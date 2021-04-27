@@ -76,10 +76,10 @@ public class MainController extends Thread{
     private void startStrategys(Properties watchlist){
         this.oldRunningThreads = (HashMap<String, ThreadDetails>) this.runningThreads.clone();
         var strategies = updateClasses();
-        for(int i = 1; i < watchlist.size() + 1; i++){ //change to foreach on watchlist
-            var symbol = watchlist.getProperty(Integer.toString(i));
+        watchlist.forEach((k, v) ->{
+            String symbol = (String) v;
             if(this.runningThreads.containsKey(symbol)){
-                continue;
+                return;
             }
 
             var strategy = getBestStrategy(strategies, symbol);
@@ -88,7 +88,7 @@ public class MainController extends Thread{
                 var riskFactor = 0;
 
                 System.out.print(symbol + " get's started with strategy: " + strategy.getClass().getName() + "\n");
-                var configuration = new TradingConfiguration(symbol, strategy, riskFactor); // TODO implement setuppservice //TODO test what happens with a riskfactor of 0
+                var configuration = new TradingConfiguration(symbol, strategy, riskFactor); // TODO implement setuppservice
                 var thread = new ThreadDetails(new Thread(new TradingBot(configuration, new TradingbotAPI(configuration, alpacaAPI), this.marketData, this)), configuration);
                 thread.getThread().start();
                 this.runningThreads.put(symbol, thread);
@@ -97,7 +97,7 @@ public class MainController extends Thread{
             else{
                 System.out.println("Couldn't find good strategy for Symbol: " + symbol);
             }
-        }
+        });
     }
 
     public StopMode getStopMode(String marktOfThread) throws Exception {
